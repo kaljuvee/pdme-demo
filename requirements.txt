@@ -4,3 +4,4 @@ opticonomy-pdme
 langchain-openai 
 transformers 
 huggingface_hub
+torch
