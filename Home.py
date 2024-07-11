@@ -8,6 +8,8 @@ import opti_pdme.model_utils as model_utils
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
 # Function to load the markdown template
 def load_template(file_path):
     with open(file_path, 'r') as file:
