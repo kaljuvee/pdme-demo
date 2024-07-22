@@ -5,3 +5,6 @@ langchain-openai
 transformers 
 huggingface_hub
 torch
+google-generativeai
+anthropic
+pandas
