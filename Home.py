@@ -184,7 +184,6 @@ st.markdown("""
 * [Google Gemini Models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions)
 * [HuggingFace Text Generation Models](https://huggingface.co/models?pipeline_tag=text-generation)
 * [VLLM Supported Models](https://docs.vllm.ai/en/latest/models/supported_models.html#supported-models)
-* [LLM Arena Leaderboard](https://chat.lmsys.org/?leaderboard)
 
 ## Notes
 
