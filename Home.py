@@ -11,7 +11,7 @@ from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logging.getLogger("openai").setLevel(logging.WARNING)
 logging.getLogger("anthropic").setLevel(logging.WARNING)
 logging.getLogger("google.generativeai").setLevel(logging.WARNING)
@@ -149,33 +149,7 @@ st.title('PDME Arena')
 st.markdown("""
 # Overview
 
-- The PDME Arena application systematically evaluates different models through seed generation, question prompting, response evaluation, and scoring, enabling comprehensive model comparison.
-
-## Seed Generation
-- Define initial seeds for creating bootstrap prompts.
-- Create a template describing the structure of the desired programming challenge.
-- Generate multiple bootstrap prompts using the seeds and template.
-
-## Question Prompting
-- Select a model to generate detailed question prompts.
-- Interact with the model's API to generate question prompts based on bootstrap prompts.
-- Store and display the generated question prompts.
-
-## Response Evaluation
-- Use each selected model to generate responses to the question prompts.
-- Store the generated responses for comparison.
-
-## Scoring Logic
-- Load a template that defines the structure for evaluating responses.
-- Evaluate responses using the evaluation model and calculate scores.
-- Determine the winner based on the total scores.
-
-## Ranking Models
-- Aggregate scores from all evaluations.
-- Create a leaderboard showing the ranking of each model based on total wins.
-
-## Summary
-
+- The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
 
 ## References - Available Models
 
@@ -184,6 +158,7 @@ st.markdown("""
 * [Google Gemini Models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions)
 * [HuggingFace Text Generation Models](https://huggingface.co/models?pipeline_tag=text-generation)
 * [VLLM Supported Models](https://docs.vllm.ai/en/latest/models/supported_models.html#supported-models)
+* [LLM Arena Leaderboard](https://chat.lmsys.org/?leaderboard)
 
 ## Notes
 
@@ -232,26 +207,39 @@ log_area = st.empty()
 if 'results_df' not in st.session_state:
     st.session_state.results_df = pd.DataFrame(columns=["Model 1", "Model 2", "Winner"])
 
-# Run Next Pair button
+# Run Get Responses button
 if 'model_pair_index' not in st.session_state:
     st.session_state.model_pair_index = 0
-if st.button('Evaluate Next Pair'):
+if st.button('Get Responses'):
     clear_log()
     if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         i = st.session_state.model_pair_index
         model_1, model_2 = st.session_state.model_pairs[i]
 
-        log_area.info(f'Running competition between Model 1: {model_1} and Model 2: {model_2}')
+        log_area.info(f'Generating responses for Model 1: {model_1} and Model 2: {model_2}')
 
-        responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
-        responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
+        st.session_state.responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
+        st.session_state.responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
+
+        st.write("Responses from Model 1:")
+        st.write(st.session_state.responses_model_1)
+        st.write("Responses from Model 2:")
+        st.write(st.session_state.responses_model_2)
+
+# Run Evaluate Next Pair button
+if st.button('Evaluate Next Pair'):
+    clear_log()
+    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
+        model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
+
+        log_area.info(f'Evaluating competition between Model 1: {model_1} and Model 2: {model_2}')
 
         eval_model = "gpt-3.5-turbo-instruct"
         client = openai.OpenAI(api_key=openai_api_key)
 
         evaluation_prompt_template = load_template('templates/evaluation_template.md')
 
-        scores = score_responses(evaluation_prompt_template, st.session_state.question_prompts, responses_model_1, responses_model_2, client, eval_model)
+        scores = score_responses(evaluation_prompt_template, st.session_state.question_prompts, st.session_state.responses_model_1, st.session_state.responses_model_2, client, eval_model)
 
         log_area.info(f'Scores: {scores}')
         winner = scores["Winner"]
