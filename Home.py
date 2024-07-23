@@ -235,7 +235,7 @@ if 'results_df' not in st.session_state:
 # Run Next Pair button
 if 'model_pair_index' not in st.session_state:
     st.session_state.model_pair_index = 0
-if st.button('Evaluate Pair'):
+if st.button('Evaluate Next Pair'):
     clear_log()
     if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         i = st.session_state.model_pair_index
