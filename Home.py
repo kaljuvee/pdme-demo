@@ -21,6 +21,13 @@ openai_api_key = os.getenv('OPENAI_API_KEY')
 anthropic_api_key = os.getenv('ANTHROPIC_API_KEY')
 google_api_key = os.getenv('GOOGLE_API_KEY')
 
+template_file_path = "templates/evaluation_template.md"
+
+# Function to load the markdown template
+def load_template(file_path):
+    with open(file_path, 'r') as file:
+        return file.read()
+
 def generate_bootstrap_prompts(seeds, template, num):
     logging.info('Generating bootstrap prompts...')
     return create_bootstrap_prompts(template=template, seeds=seeds, num=num)
@@ -136,7 +143,7 @@ def rank_models(results, models):
     return leaderboard_df
 
 # Initialize Streamlit app
-st.title('Model Evaluation App')
+st.title('PDME Arena')
 
 # Multiselect for models
 model_list = ['claude-3-opus-20240229', 'claude-3-5-sonnet-20240620', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.0-pro']
@@ -177,14 +184,14 @@ if 'results_df' not in st.session_state:
 # Run Next Pair button
 if 'model_pair_index' not in st.session_state:
     st.session_state.model_pair_index = 0
-if st.button('Run Next Pair'):
+if st.button('Evaluate Pair'):
     clear_log()
     if st.session_state.model_pair_index < len(selected_models) - 1:
         i = st.session_state.model_pair_index
         model_1 = selected_models[i]
         model_2 = selected_models[i + 1]
 
-        log_area.info(f'Running competition between {model_1} and {model_2}')
+        log_area.info(f'Running competition between Model 1: {model_1} and Model 2: {model_2}')
 
         responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
         responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
@@ -192,46 +199,16 @@ if st.button('Run Next Pair'):
         eval_model = "gpt-3.5-turbo-instruct"
         client = openai.OpenAI(api_key=openai_api_key)
 
-        evaluation_prompt_template = """<prefix><user_start>Here is a prompt:
-        {
-            "instruction": \"""<question_full>\""",
-        }
-
-        Here are the outputs of the models:
-        [
-            {
-                "model": 1,
-                "answer": \"""<response1>\"""
-            },
-            {
-                "model": 2,
-                "answer": \"""<response2>\"""
-            }
-        ]
-
-        Please create a dictLet's continue with the modifications to complete the Streamlit application script.
-
-### Streamlit Script (continued)
-
-```python
-        Please create a dict containing the highest quality answer, i.e., produce the following output:
-
-        {
-            'best_model': <model-name>
-        }
-
-        Please provide the response that the majority of humans would consider better.
-
-        <assistant_start>{
-        'best_model': """
+        evaluation_prompt_template = load_template('templates/evaluation_template.md')
 
         scores = score_responses(evaluation_prompt_template, st.session_state.question_prompts, responses_model_1, responses_model_2, client, eval_model)
 
         log_area.info(f'Scores: {scores}')
         winner = scores["Winner"]
         
-        new_row = {"Model 1": model_1, "Model 2": model_2, "Winner": winner}
-        st.session_state.results_df = st.session_state.results_df.append(new_row, ignore_index=True)
+        new_row = pd.DataFrame({"Model 1": [model_1], "Model 2": [model_2], "Winner": [winner]})
+        st.session_state.results_df = pd.concat([st.session_state.results_df, new_row], ignore_index=True)
+
         
         st.session_state.model_pair_index += 1
     else:
