@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import os
 import logging
 import pandas as pd
+from itertools import combinations
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
 
@@ -145,9 +146,60 @@ def rank_models(results, models):
 # Initialize Streamlit app
 st.title('PDME Arena')
 
+st.markdown("""
+# Overview
+
+- The PDME Arena application systematically evaluates different models through seed generation, question prompting, response evaluation, and scoring, enabling comprehensive model comparison.
+
+## Seed Generation
+- Define initial seeds for creating bootstrap prompts.
+- Create a template describing the structure of the desired programming challenge.
+- Generate multiple bootstrap prompts using the seeds and template.
+
+## Question Prompting
+- Select a model to generate detailed question prompts.
+- Interact with the model's API to generate question prompts based on bootstrap prompts.
+- Store and display the generated question prompts.
+
+## Response Evaluation
+- Use each selected model to generate responses to the question prompts.
+- Store the generated responses for comparison.
+
+## Scoring Logic
+- Load a template that defines the structure for evaluating responses.
+- Evaluate responses using the evaluation model and calculate scores.
+- Determine the winner based on the total scores.
+
+## Ranking Models
+- Aggregate scores from all evaluations.
+- Create a leaderboard showing the ranking of each model based on total wins.
+
+## Summary
+
+
+## References - Available Models
+
+* [OpenAI GPT Models](https://platform.openai.com/docs/models)
+* [Anthropic Claude Models](https://docs.anthropic.com/en/docs/about-claude/models)
+* [Google Gemini Models](https://cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions)
+* [HuggingFace Text Generation Models](https://huggingface.co/models?pipeline_tag=text-generation)
+* [VLLM Supported Models](https://docs.vllm.ai/en/latest/models/supported_models.html#supported-models)
+* [LLM Arena Leaderboard](https://chat.lmsys.org/?leaderboard)
+
+## Notes
+
+* The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
+* Some providers, such as OpenAI and Google point the latest model to a particular release (eg gpt-4o -> gpt-4o-2024-05-13) while for others such as Anthropic you have to hard code the release data / number into the model name (claude-3-5-sonnet-20240620).            
+
+""")
+
 # Multiselect for models
-model_list = ['claude-3-opus-20240229', 'claude-3-5-sonnet-20240620', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.0-pro']
-selected_models = st.multiselect('Select models to evaluate:', model_list)
+model_list = ['claude-3-opus-20240229', 'claude-3-5-sonnet-20240620', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
+selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
+
+# Generate all unique pairs of models
+if 'model_pairs' not in st.session_state:
+    st.session_state.model_pairs = list(combinations(selected_models, 2))
 
 # Button to generate bootstrap prompts
 if 'bootstrap_prompts' not in st.session_state:
@@ -186,10 +238,9 @@ if 'model_pair_index' not in st.session_state:
     st.session_state.model_pair_index = 0
 if st.button('Evaluate Pair'):
     clear_log()
-    if st.session_state.model_pair_index < len(selected_models) - 1:
+    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         i = st.session_state.model_pair_index
-        model_1 = selected_models[i]
-        model_2 = selected_models[i + 1]
+        model_1, model_2 = st.session_state.model_pairs[i]
 
         log_area.info(f'Running competition between Model 1: {model_1} and Model 2: {model_2}')
 
@@ -209,7 +260,6 @@ if st.button('Evaluate Pair'):
         new_row = pd.DataFrame({"Model 1": [model_1], "Model 2": [model_2], "Winner": [winner]})
         st.session_state.results_df = pd.concat([st.session_state.results_df, new_row], ignore_index=True)
 
-        
         st.session_state.model_pair_index += 1
     else:
         log_area.info('All pairs have been evaluated.')
