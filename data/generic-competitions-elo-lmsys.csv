@@ -1,0 +1,7 @@
+model_name,pdme_elo,lmsys_elo
+gemini-1.5-pro,1001.999739,1261
+gpt-4o,803.9085606,1287
+claude-3-opus-20240229,800,1248
+gpt-4-turbo,799.9315861,1257
+claude-3-5-sonnet-20240620,796.045649,1272
+gpt-4,788.1150993,1251

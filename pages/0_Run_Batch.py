@@ -154,7 +154,7 @@ def rank_models(results, models):
     return leaderboard_df
 
 # Initialize Streamlit app
-st.title('Evaluate All Models')
+st.title('PDME Arena - Batch Run')
 
 st.markdown("""
 ## Overview

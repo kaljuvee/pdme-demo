@@ -9,6 +9,7 @@ import pandas as pd
 from itertools import combinations
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
+from collections import defaultdict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -135,24 +136,33 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
 
     return scores_dict
 
-def rank_models(results, models):
-    logging.info('Ranking models...')
-    scores = {model: 0 for model in models}
+def compute_online_elo(battles, K=4, SCALE=400, BASE=10, INIT_RATING=1000):
+    rating = defaultdict(lambda: INIT_RATING)
 
-    for _, row in results.iterrows():
-        model1 = row["Model 1"]
-        model2 = row["Model 2"]
-        winner = row["Winner"]
+    for rd, model_a, model_b, winner in battles[['Model 1', 'Model 2', 'Winner']].itertuples():
+        ra = rating[model_a]
+        rb = rating[model_b]
+        ea = 1 / (1 + BASE ** ((rb - ra) / SCALE))
+        eb = 1 / (1 + BASE ** ((ra - rb) / SCALE))
         if winner == "Model 1":
-            scores[model1] += 1
+            sa = 1
         elif winner == "Model 2":
-            scores[model2] += 1
+            sa = 0
+        elif winner == "tie" or winner == "tie (bothbad)":
+            sa = 0.5
+        else:
+            raise Exception(f"unexpected vote {winner}")
+        rating[model_a] += K * (sa - ea)
+        rating[model_b] += K * (1 - sa - eb)
 
-    leaderboard = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    leaderboard_df = pd.DataFrame(leaderboard, columns=["Model Name", "Wins"])
-    leaderboard_df["Rank"] = leaderboard_df["Wins"].rank(ascending=False, method='dense').astype(int)
+    # calibrate llama-13b to 800
+    delta = (800-rating["claude-3-opus-20240229"])
+    for model in battles["Model 1"].unique():
+        rating[model] += delta
+    elo_df = pd.DataFrame(list(rating.items()), columns=['model_name', 'elo_ranking'])
+    elo_df = elo_df.sort_values(by='elo_ranking', ascending=False).reset_index(drop=True)
 
-    return leaderboard_df
+    return elo_df
 
 # Initialize Streamlit app
 st.title('PDME Arena')
@@ -189,7 +199,7 @@ The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Ins
 """)
 
 # Multiselect for models
-model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
+model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
 selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
 
 # Select box for evaluation type
@@ -312,6 +322,6 @@ st.write(st.session_state.results_df)
 
 # Rank Models button
 if st.button('Rank Models'):
-    leaderboard_df = rank_models(st.session_state.results_df, selected_models)
+    leaderboard_df = compute_online_elo(st.session_state.results_df, selected_models)
     st.write(leaderboard_df)
 
