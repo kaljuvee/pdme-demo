@@ -199,6 +199,13 @@ if st.button('Generate Question Prompts'):
     st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
     st.write(st.session_state.question_prompts)
 
+# Logging area
+if 'log' not in st.session_state:
+    st.session_state.log = []
+def clear_log():
+    st.session_state.log = []
+log_area = st.empty()
+
 # Results DataFrame
 if 'results_df' not in st.session_state:
     st.session_state.results_df = pd.DataFrame(columns=["Model 1", "Model 2", "Winner"])
@@ -207,6 +214,7 @@ if 'results_df' not in st.session_state:
 if 'model_pair_index' not in st.session_state:
     st.session_state.model_pair_index = 0
 if st.button('Get Responses'):
+    clear_log()
     if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         i = st.session_state.model_pair_index
         model_1, model_2 = st.session_state.model_pairs[i]
@@ -223,6 +231,7 @@ if st.button('Get Responses'):
 
 # Run Evaluate Next Pair button
 if st.button('Score Responses'):
+    clear_log()
     if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
 
@@ -258,3 +267,4 @@ st.write(st.session_state.results_df)
 if st.button('Rank Models'):
     leaderboard_df = rank_models(st.session_state.results_df, selected_models)
     st.write(leaderboard_df)
+
