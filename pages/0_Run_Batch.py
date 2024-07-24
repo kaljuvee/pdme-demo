@@ -113,8 +113,7 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
         prompt_2 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_1[i]).replace("<response2>", responses_model_2[i])
         score_2 = llm.evaluate(prompt_2, ["1", "2"])
 
-                # Average the scores
-        # Now we know exactly which score corresponds to which model
+        # Average the scores
         model_1_score = (score_1[1] + score_2[0]) / 2  # Average of Model 1's scores
         model_2_score = (score_1[0] + score_2[1]) / 2  # Average of Model 2's scores
 
@@ -155,7 +154,7 @@ def rank_models(results, models):
     return leaderboard_df
 
 # Initialize Streamlit app
-st.title('PDME Arena')
+st.title('Evaluate All Models')
 
 st.markdown("""
 ## Overview
@@ -166,10 +165,8 @@ The method uses a single text generation AI, referred to as eval model, to evalu
 2. The question is sent to the AI model being tested, and it generates a response.
 3. Likewise, the eval model also generates an answer to the same question.
 4. The eval model then uses a text prompt we write, to compare the two answers and pick the winner.
-5. For *n* models, *n(n-1)/2* comparisons are made to generate competition results.
-6. Finally, we calculate ELO ranking to rank the models.
 
-This method allows us to evaluate models for any topic, such as generic question,  storytelling, programming, and finance.
+This method allows us to evaluate models for any topic, such as generic question, storytelling, programming, and finance.
 The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
 
 ## References - Available Models
@@ -203,47 +200,35 @@ num_prompts = st.slider('Select number of prompts to generate:', min_value=1, ma
 if 'model_pairs' not in st.session_state:
     st.session_state.model_pairs = list(combinations(selected_models, 2))
 
-# Conditional generation of bootstrap prompts
-if eval_type_var in ['coding', 'story_telling']:
-    if 'bootstrap_prompts' not in st.session_state:
-        st.session_state.bootstrap_prompts = []
-
-    if st.button('Generate Bootstrap Prompts'):
-        if eval_type_var == 'coding':
-            seeds = { 
-                "<language>": ["python", "c++"],
-                "<seed>": ["tic-tac-toe", "array", "sorting", "dictionary"],
-            }
-            bootstrap_prompt_template = load_template('templates/coding_template.md')
-        elif eval_type_var == 'story_telling':
-            seeds = {
-                "seed_1": ["a haunted house", "a time traveler", "a magical forest"],
-                "seed_2": ["redemption", "discovery", "loss"],
-                "seed_3": ["a talking animal", "an ancient artifact", "a secret society"],
-                "seed_4": ["a plot twist", "a moral dilemma", "an unexpected friendship"]
-            }
-            bootstrap_prompt_template = load_template('templates/story_telling_template.md')
-
-        st.session_state.bootstrap_prompts = generate_bootstrap_prompts(seeds, bootstrap_prompt_template, num=num_prompts)
-        st.write(st.session_state.bootstrap_prompts)
-
-# Generate question prompts
+# Pre-load questions based on evaluation type
+if 'bootstrap_prompts' not in st.session_state:
+    st.session_state.bootstrap_prompts = []
 if 'question_prompts' not in st.session_state:
     st.session_state.question_prompts = []
 
-if st.button('Generate Question Prompts'):
-    if eval_type_var == 'generic':
-        general_questions_file_path = 'templates/general_question_template.md'
-        all_questions = load_questions(general_questions_file_path)
-        st.session_state.question_prompts = all_questions[:num_prompts]
-    else:
-        st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
-    
-    st.write(st.session_state.question_prompts)
+if eval_type_var in ['coding', 'story_telling']:
+    if eval_type_var == 'coding':
+        seeds = { 
+            "<language>": ["python", "c++"],
+            "<seed>": ["tic-tac-toe", "array", "sorting", "dictionary"],
+        }
+        bootstrap_prompt_template = load_template('templates/coding_template.md')
+    elif eval_type_var == 'story_telling':
+        seeds = {
+            "seed_1": ["a haunted house", "a time traveler", "a magical forest"],
+            "seed_2": ["redemption", "discovery", "loss"],
+            "seed_3": ["a talking animal", "an ancient artifact", "a secret society"],
+            "seed_4": ["a plot twist", "a moral dilemma", "an unexpected friendship"]
+        }
+        bootstrap_prompt_template = load_template('templates/story_telling_template.md')
 
-    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
-        model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
-        st.success(f'Model 1: {model_1}, Model 2: {model_2}')
+    st.session_state.bootstrap_prompts = generate_bootstrap_prompts(seeds, bootstrap_prompt_template, num=num_prompts)
+    st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
+
+elif eval_type_var == 'generic':
+    general_questions_file_path = 'templates/general_question_template.md'
+    all_questions = load_questions(general_questions_file_path)
+    st.session_state.question_prompts = all_questions[:num_prompts]
 
 # Logging area
 if 'log' not in st.session_state:
@@ -254,42 +239,28 @@ log_area = st.empty()
 
 # Results DataFrame
 if 'results_df' not in st.session_state:
-    st.session_state.results_df = pd.DataFrame(columns=["Model 1", "Model 2", "Winner"])
+    st.session_state.results_df = pd.DataFrame(columns=["Model 1", "Model 2", "Model 1 Total Score", "Model 2 Total Score", "Winner"])
 
-# Run Get Responses button
-if 'model_pair_index' not in st.session_state:
-    st.session_state.model_pair_index = 0
-if st.button('Get Responses'):
+# Single button to run the entire evaluation
+if st.button('Score'):
     clear_log()
-    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
-        i = st.session_state.model_pair_index
-        model_1, model_2 = st.session_state.model_pairs[i]
+    eval_model = "gpt-3.5-turbo-instruct"
+    client = openai.OpenAI(api_key=openai_api_key)
+    evaluation_prompt_template = load_template('templates/evaluation_template.md')
 
+    for model_1, model_2 in st.session_state.model_pairs:
         log_area.info(f'Generating responses for Model 1: {model_1} and Model 2: {model_2}')
-
-        with st.spinner('Generating responses...'):
-            st.session_state.responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
-            st.session_state.responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
-
+        
+        with st.spinner(f'Generating responses for {model_1} and {model_2}...'):
+            responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
+            responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
+        
         st.write(f"Responses from Model 1 ('{model_1}'):")
-        st.write(st.session_state.responses_model_1)
+        st.write(responses_model_1)
         st.write(f"Responses from Model 2 ('{model_2}'):")
-        st.write(st.session_state.responses_model_2)
+        st.write(responses_model_2)
 
-# Run Evaluate Next Pair button
-if st.button('Score Responses'):
-    clear_log()
-    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
-        model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
-
-        log_area.info(f'Evaluating competition between Model 1: {model_1} and Model 2: {model_2}')
-
-        eval_model = "gpt-3.5-turbo-instruct"
-        client = openai.OpenAI(api_key=openai_api_key)
-
-        evaluation_prompt_template = load_template('templates/evaluation_template.md')
-
-        scores = score_responses(evaluation_prompt_template, st.session_state.question_prompts, st.session_state.responses_model_1, st.session_state.responses_model_2, client, eval_model)
+        scores = score_responses(evaluation_prompt_template, st.session_state.question_prompts, responses_model_1, responses_model_2, client, eval_model)
 
         log_area.info(f'Scores: {scores}')
         winner = scores["Winner"]
@@ -303,10 +274,6 @@ if st.button('Score Responses'):
         }, index=[0])
         st.session_state.results_df = pd.concat([st.session_state.results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
 
-        st.session_state.model_pair_index += 1
-    else:
-        log_area.info('All pairs have been evaluated.')
-
 # Display the results DataFrame
 st.write(st.session_state.results_df)
 
@@ -315,3 +282,5 @@ if st.button('Rank Models'):
     leaderboard_df = rank_models(st.session_state.results_df, selected_models)
     st.write(leaderboard_df)
 
+# Add a log output area
+st.text_area("Log Output", value="\n".join(st.session_state.log), height=200)
