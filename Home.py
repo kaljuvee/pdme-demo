@@ -108,12 +108,15 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
         prompt_2 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_1[i]).replace("<response2>", responses_model_2[i])
         score_2 = llm.evaluate(prompt_2, ["1", "2"])
 
-        avg_score = [(score_1[j] + score_2[j]) / 2 for j in range(len(score_1))]
+                # Average the scores
+        # Now we know exactly which score corresponds to which model
+        model_1_score = (score_1[1] + score_2[0]) / 2  # Average of Model 1's scores
+        model_2_score = (score_1[0] + score_2[1]) / 2  # Average of Model 2's scores
 
-        model_1_scores.append(avg_score[1])
-        model_2_scores.append(avg_score[0])
-        sum_model_1_scores += avg_score[1]
-        sum_model_2_scores += avg_score[0]
+        model_1_scores.append(model_1_score)
+        model_2_scores.append(model_2_score)
+        sum_model_1_scores += model_1_score
+        sum_model_2_scores += model_2_score
 
     winner = "Model 1" if sum_model_1_scores > sum_model_2_scores else "Model 2"
 
