@@ -29,6 +29,11 @@ def load_template(file_path):
     with open(file_path, 'r') as file:
         return file.read()
 
+def load_questions(file_path):
+    content = load_template(file_path)
+    questions = content.split('\n')
+    return [q.strip() for q in questions if q.strip()]
+
 def generate_bootstrap_prompts(seeds, template, num):
     logging.info('Generating bootstrap prompts...')
     return create_bootstrap_prompts(template=template, seeds=seeds, num=num)
@@ -153,9 +158,17 @@ def rank_models(results, models):
 st.title('PDME Arena')
 
 st.markdown("""
-# Overview
+## Overview
 
-- The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
+The method uses a single text generation AI, referred to as eval model, to evaluate any other text generation AI on any topic, and the evaluation works like this:
+
+1. We write a text prompt for what questions the eval model should generate, and provide seeds that are randomly picked to generate a question.
+2. The question is sent to the AI model being tested, and it generates a response.
+3. Likewise, the eval model also generates an answer to the same question.
+4. The eval model then uses a text prompt we write, to compare the two answers and pick the winner.
+
+This method allows us to evaluate models for any topic, such as generic question,  storytelling, programming, and finance.
+The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
 
 ## References - Available Models
 
@@ -177,31 +190,54 @@ st.markdown("""
 model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
 selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
 
+# Select box for evaluation type
+eval_type = st.selectbox('Select Evaluation Type', ['Generic', 'Coding', 'Story Telling'])
+eval_type_var = eval_type.lower().replace(' ', '_')
+
+# Slider to select the number of prompts to generate
+num_prompts = st.slider('Select number of prompts to generate:', min_value=1, max_value=5, value=1)
+
 # Generate all unique pairs of models
 if 'model_pairs' not in st.session_state:
     st.session_state.model_pairs = list(combinations(selected_models, 2))
 
-# Button to generate bootstrap prompts
-if 'bootstrap_prompts' not in st.session_state:
-    st.session_state.bootstrap_prompts = []
-if st.button('Generate Bootstrap Prompts'):
-    seeds = { 
-        "<language>": ["python", "c++"],
-        "<seed>": ["tic-tac-toe", "array", "sorting", "dictionary"],
-    }
-    bootstrap_prompt_template = """Write a question asking to make a programming challenge meant to evaluate programming abilities.
-    The problem should be possible to solve in less than 100 lines of code for a very skilled programmer.
-    The problem should use the <language> language, and be related to these seeds: <seed>, <seed>."""
-    st.session_state.bootstrap_prompts = generate_bootstrap_prompts(seeds, bootstrap_prompt_template, num=3)
-    st.write(st.session_state.bootstrap_prompts)
+# Conditional generation of bootstrap prompts
+if eval_type_var in ['coding', 'story_telling']:
+    if 'bootstrap_prompts' not in st.session_state:
+        st.session_state.bootstrap_prompts = []
+
+    if st.button('Generate Bootstrap Prompts'):
+        if eval_type_var == 'coding':
+            seeds = { 
+                "<language>": ["python", "c++"],
+                "<seed>": ["tic-tac-toe", "array", "sorting", "dictionary"],
+            }
+            bootstrap_prompt_template = load_template('templates/coding_template.md')
+        elif eval_type_var == 'story_telling':
+            seeds = {
+                "seed_1": ["a haunted house", "a time traveler", "a magical forest"],
+                "seed_2": ["redemption", "discovery", "loss"],
+                "seed_3": ["a talking animal", "an ancient artifact", "a secret society"],
+                "seed_4": ["a plot twist", "a moral dilemma", "an unexpected friendship"]
+            }
+            bootstrap_prompt_template = load_template('templates/story_telling_template.md')
+
+        st.session_state.bootstrap_prompts = generate_bootstrap_prompts(seeds, bootstrap_prompt_template, num=num_prompts)
+        st.write(st.session_state.bootstrap_prompts)
 
 # Generate question prompts
 if 'question_prompts' not in st.session_state:
     st.session_state.question_prompts = []
-if st.button('Generate Question Prompts'):
-    st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
-    st.write(st.session_state.question_prompts)
 
+if st.button('Generate Question Prompts'):
+    if eval_type_var == 'generic':
+        general_questions_file_path = 'templates/general_question_template.md'
+        all_questions = load_questions(general_questions_file_path)
+        st.session_state.question_prompts = all_questions[:num_prompts]
+    else:
+        st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
+    
+    st.write(st.session_state.question_prompts)
 # Logging area
 if 'log' not in st.session_state:
     st.session_state.log = []
