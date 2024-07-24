@@ -120,8 +120,8 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
     scores_dict = {
         "Model 1 Scores": model_1_scores,
         "Model 2 Scores": model_2_scores,
-        "Model 1 Total Scores": sum_model_1_scores,
-        "Model 2 Total Scores": sum_model_2_scores,
+        "Model 1 Total Score": sum_model_1_scores,
+        "Model 2 Total Score": sum_model_2_scores,
         "Winner": winner
     }
 
@@ -227,7 +227,7 @@ if st.button('Get Responses'):
         st.write(st.session_state.responses_model_2)
 
 # Run Evaluate Next Pair button
-if st.button('Evaluate Next Pair'):
+if st.button('Score Responses'):
     clear_log()
     if st.session_state.model_pair_index < len(st.session_state.model_pairs):
         model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
@@ -244,7 +244,13 @@ if st.button('Evaluate Next Pair'):
         log_area.info(f'Scores: {scores}')
         winner = scores["Winner"]
         
-        new_row = pd.DataFrame({"Model 1": [model_1], "Model 2": [model_2], "Winner": [winner]})
+        new_row = pd.DataFrame({
+            "Model 1": [model_1],
+            "Model 2": [model_2],
+            "Model 1 Total Score": [scores["Model 1 Total Score"]],
+            "Model 2 Total Score": [scores["Model 2 Total Score"]],
+            "Winner": [winner]
+        })
         st.session_state.results_df = pd.concat([st.session_state.results_df, new_row], ignore_index=True)
 
         st.session_state.model_pair_index += 1
