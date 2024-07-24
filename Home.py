@@ -238,6 +238,10 @@ if st.button('Generate Question Prompts'):
         st.session_state.question_prompts = generate_question_prompts(st.session_state.bootstrap_prompts, model_name="gpt-3.5-turbo", api_key=openai_api_key)
     
     st.write(st.session_state.question_prompts)
+    
+    if st.session_state.model_pair_index < len(st.session_state.model_pairs):
+        model_1, model_2 = st.session_state.model_pairs[st.session_state.model_pair_index]
+        st.success(f'Model 1: {model_1}, Model 2: {model_2}')
 # Logging area
 if 'log' not in st.session_state:
     st.session_state.log = []
