@@ -265,14 +265,15 @@ if st.button('Get Responses'):
 
         log_area.info(f'Generating responses for Model 1: {model_1} and Model 2: {model_2}')
 
-        st.session_state.responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
-        st.session_state.responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
+        with st.spinner('Generating responses...'):
+            st.session_state.responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
+            st.session_state.responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
 
         st.write(f"Responses from Model 1 ('{model_1}'):")
         st.write(st.session_state.responses_model_1)
         st.write(f"Responses from Model 2 ('{model_2}'):")
         st.write(st.session_state.responses_model_2)
-
+        
 # Run Evaluate Next Pair button
 if st.button('Score Responses'):
     clear_log()
