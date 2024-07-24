@@ -250,8 +250,8 @@ if st.button('Score Responses'):
             "Model 1 Total Score": [scores["Model 1 Total Score"]],
             "Model 2 Total Score": [scores["Model 2 Total Score"]],
             "Winner": [winner]
-        })
-        st.session_state.results_df = pd.concat([st.session_state.results_df, new_row], ignore_index=True)
+        }, index=[0])
+        st.session_state.results_df = pd.concat([st.session_state.results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
 
         st.session_state.model_pair_index += 1
     else:
