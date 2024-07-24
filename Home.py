@@ -174,7 +174,7 @@ st.markdown("""
 """)
 
 # Multiselect for models
-model_list = ['claude-3-opus-20240229', 'claude-3-5-sonnet-20240620', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
+model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
 selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
 
 # Generate all unique pairs of models
