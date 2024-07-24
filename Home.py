@@ -131,7 +131,10 @@ def rank_models(results, models):
     logging.info('Ranking models...')
     scores = {model: 0 for model in models}
 
-    for model1, model2, winner in results:
+    for _, row in results.iterrows():
+        model1 = row["Model 1"]
+        model2 = row["Model 2"]
+        winner = row["Winner"]
         if winner == "Model 1":
             scores[model1] += 1
         elif winner == "Model 2":
@@ -262,7 +265,7 @@ st.write(st.session_state.results_df)
 
 # Rank Models button
 if st.button('Rank Models'):
-    leaderboard_df = rank_models(st.session_state.results_df.values, selected_models)
+    leaderboard_df = rank_models(st.session_state.results_df, selected_models)
     st.write(leaderboard_df)
 
 # Add a log output area
