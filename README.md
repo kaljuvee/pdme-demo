@@ -41,5 +41,5 @@ python tests/pdme_arena.py \
     --num_prompts 3 \
     --battles_output_file data/generic_battles.csv \
     --elo_output_file data/generic_elo.csv \
-    --elo_output_file claude-3-opus-20240229
+    --elo_calibration_model claude-3-opus-20240229
   ```
