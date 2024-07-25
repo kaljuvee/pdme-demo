@@ -1,5 +1,7 @@
 # Opticonomy PDME Demo
 
+- Run evaluations step by step or in batch
+
 ## Clone the Repo
   ```
   git clone https://github.com/kaljuvee/pdme-demo.git
