@@ -90,8 +90,12 @@ def generate_responses(model_name, question_prompts):
         logging.info('Generating for Gemini with: %s', model_last_part)
         model = genai.GenerativeModel(model_last_part)
         for item in question_prompts:
-            response = model.generate_content(item)
-            responses.append(response.text)
+            try:
+                response = model.generate_content(item)
+                responses.append(response.text)
+            except ValueError as e:
+                logging.error(f"Error generating response for {model_name}: {e}")
+                return None
 
     else:
         raise ValueError(f"Unsupported model name '{model_name}'.")
@@ -154,7 +158,7 @@ def rank_models(results, models):
     return leaderboard_df
 
 # Initialize Streamlit app
-st.title('PDME Arena - Batch Run')
+st.title('Evaluate All Models')
 
 st.markdown("""
 ## Overview
@@ -194,7 +198,8 @@ eval_type = st.selectbox('Select Evaluation Type', ['Generic', 'Coding', 'Story 
 eval_type_var = eval_type.lower().replace(' ', '_')
 
 # Slider to select the number of prompts to generate
-num_prompts = st.slider('Select number of prompts to generate:', min_value=1, max_value=5, value=1)
+num_prompts = st.selectbox('Select number of prompts to generate:', options=list(range(1, 11)), index=4)
+
 
 # Generate all unique pairs of models
 if 'model_pairs' not in st.session_state:
@@ -242,7 +247,7 @@ if 'results_df' not in st.session_state:
     st.session_state.results_df = pd.DataFrame(columns=["Model 1", "Model 2", "Model 1 Total Score", "Model 2 Total Score", "Winner"])
 
 # Single button to run the entire evaluation
-if st.button('Score'):
+if st.button('Run Evaluation'):
     clear_log()
     eval_model = "gpt-3.5-turbo-instruct"
     client = openai.OpenAI(api_key=openai_api_key)
@@ -253,7 +258,13 @@ if st.button('Score'):
         
         with st.spinner(f'Generating responses for {model_1} and {model_2}...'):
             responses_model_1 = generate_responses(model_1, st.session_state.question_prompts)
+            if responses_model_1 is None:
+                log_area.warning(f'Skipping evaluation for Model 1: {model_1} due to generation error.')
+                continue
             responses_model_2 = generate_responses(model_2, st.session_state.question_prompts)
+            if responses_model_2 is None:
+                log_area.warning(f'Skipping evaluation for Model 2: {model_2} due to generation error.')
+                continue
         
         st.write(f"Responses from Model 1 ('{model_1}'):")
         st.write(responses_model_1)
@@ -273,6 +284,7 @@ if st.button('Score'):
             "Winner": [winner]
         }, index=[0])
         st.session_state.results_df = pd.concat([st.session_state.results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
+        st.write(st.session_state.results_df)  # Display the results DataFrame after each iteration
 
 # Display the results DataFrame
 st.write(st.session_state.results_df)
