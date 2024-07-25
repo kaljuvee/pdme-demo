@@ -40,5 +40,6 @@ python tests/pdme_arena.py \
     --eval_type generic \
     --num_prompts 3 \
     --battles_output_file data/generic_battles.csv \
-    --elo_output_file data/generic_elo.csv
+    --elo_output_file data/generic_elo.csv \
+    --elo_output_file claude-3-opus-20240229
   ```
