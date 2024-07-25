@@ -9,3 +9,4 @@ google-generativeai
 anthropic
 pandas
 plotly
+scipy
