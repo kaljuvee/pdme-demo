@@ -39,6 +39,6 @@ python tests/pdme_arena.py \
     --models_file data/pdme_model_list.csv \
     --eval_type generic \
     --num_prompts 3 \
-    --generic_output_file data/generic_battles.csv \
+    --battles_output_file data/generic_battles.csv \
     --elo_output_file data/generic_elo.csv
   ```
