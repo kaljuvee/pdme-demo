@@ -25,6 +25,6 @@ Upload the CSV file containing the LLM Arena battles data.
 uploaded_llm_file = st.file_uploader("Choose a CSV file for LLM Arena data", type="csv")
 
 if uploaded_llm_file is not None:
-    llm_arena_data = pd.read_csv(uploaded_llm_file).sort_values(ascending=True, by=["tstamp"])
+    llm_arena_data = pd.read_csv(uploaded_llm_file)
     st.write("### Uploaded LLM Arena Data (First 10 rows):")
     st.write(llm_arena_data.head(10))
