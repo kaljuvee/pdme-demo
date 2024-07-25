@@ -9,6 +9,7 @@ import pandas as pd
 from itertools import combinations
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
+from google.api_core.exceptions import GoogleAPICallError, RetryError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -26,13 +27,19 @@ template_file_path = "templates/evaluation_template.md"
 
 # Function to load the markdown template
 def load_template(file_path):
-    with open(file_path, 'r') as file:
-        return file.read()
+    try:
+        with open(file_path, 'r') as file:
+            return file.read()
+    except FileNotFoundError:
+        st.error(f"Template file not found: {file_path}")
+        return ""
 
 def load_questions(file_path):
     content = load_template(file_path)
-    questions = content.split('\n')
-    return [q.strip() for q in questions if q.strip()]
+    if content:
+        questions = content.split('\n')
+        return [q.strip() for q in questions if q.strip()]
+    return []
 
 def generate_bootstrap_prompts(seeds, template, num):
     logging.info('Generating bootstrap prompts...')
@@ -93,7 +100,7 @@ def generate_responses(model_name, question_prompts):
             try:
                 response = model.generate_content(item)
                 responses.append(response.text)
-            except ValueError as e:
+            except (GoogleAPICallError, RetryError, ValueError) as e:
                 logging.error(f"Error generating response for {model_name}: {e}")
                 return None
 
@@ -138,27 +145,8 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
 
     return scores_dict
 
-def rank_models(results, models):
-    logging.info('Ranking models...')
-    scores = {model: 0 for model in models}
-
-    for _, row in results.iterrows():
-        model1 = row["Model 1"]
-        model2 = row["Model 2"]
-        winner = row["Winner"]
-        if winner == "Model 1":
-            scores[model1] += 1
-        elif winner == "Model 2":
-            scores[model2] += 1
-
-    leaderboard = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-    leaderboard_df = pd.DataFrame(leaderboard, columns=["Model Name", "Wins"])
-    leaderboard_df["Rank"] = leaderboard_df["Wins"].rank(ascending=False, method='dense').astype(int)
-
-    return leaderboard_df
-
 # Initialize Streamlit app
-st.title('Evaluate All Models')
+st.title('PDME Arena - Evaluate All Models')
 
 st.markdown("""
 ## Overview
@@ -190,9 +178,7 @@ The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Ins
 """)
 
 # Multiselect for models
-#model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
 model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o-2024-05-13', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4-1106-preview', 'gemini-1.5-pro-api-0409-preview']
-
 selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
 
 # Select box for evaluation type
@@ -290,11 +276,6 @@ if st.button('Run Evaluation'):
 
 # Display the results DataFrame
 st.write(st.session_state.results_df)
-
-# Rank Models button
-if st.button('Rank Models'):
-    leaderboard_df = rank_models(st.session_state.results_df, selected_models)
-    st.write(leaderboard_df)
 
 # Add a log output area
 st.text_area("Log Output", value="\n".join(st.session_state.log), height=200)
