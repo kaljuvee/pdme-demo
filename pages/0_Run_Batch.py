@@ -190,7 +190,9 @@ The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Ins
 """)
 
 # Multiselect for models
-model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
+#model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o', 'gpt-4-turbo', 'gpt-4', 'gemini-1.5-pro']
+model_list = ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'gpt-4o-2024-05-13', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4-1106-preview', 'gemini-1.5-pro-api-0409-preview']
+
 selected_models = st.multiselect('Select models to evaluate:', model_list, default=model_list)
 
 # Select box for evaluation type
