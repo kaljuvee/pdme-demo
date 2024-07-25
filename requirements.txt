@@ -10,3 +10,4 @@ anthropic
 pandas
 plotly
 scipy
+anthropic
