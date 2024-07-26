@@ -44,15 +44,15 @@ use_default_llmarena = st.checkbox('Use existing LLM Arena data file (llmarena_e
 
 if use_default_llmarena:
     llm_arena_data = pd.read_csv(llmarena_default_path)
-    st.write("### Existing LLM Arena Data (First 10 rows):")
-    st.write(llm_arena_data.head(10))
+    st.write("### Existing LLM Arena Data")
+    st.write(llm_arena_data)
 else:
     uploaded_llm_file = st.file_uploader("Choose a CSV file for LLM Arena data", type="csv")
 
     if uploaded_llm_file is not None:
         llm_arena_data = pd.read_csv(uploaded_llm_file)
-        st.write("### Uploaded LLM Arena Data (First 10 rows):")
-        st.write(llm_arena_data.head(10))
+        st.write("### Uploaded LLM Arena Data")
+        st.write(llm_arena_data)
 
 if uploaded_elo_file is not None and (use_default_llmarena or uploaded_llm_file is not None):
     if st.button("Calculate Correlation"):
