@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr
 
 def match_keys(df, key_column, match_dict):
     df[key_column] = df[key_column].replace(match_dict)
@@ -34,18 +34,27 @@ if uploaded_elo_file is not None:
     st.write(elo_results.head())
 
 st.markdown("""
-## Upload LLM Arena Data File
-Upload the CSV file containing the LLM Arena battles data.
+## LLM Arena Data File
+You can either upload a new CSV file or use the existing `llmarena_elo.csv` file.
 """)
 
-uploaded_llm_file = st.file_uploader("Choose a CSV file for LLM Arena data", type="csv")
+llmarena_default_path = 'data/llmarena_elo.csv'
 
-if uploaded_llm_file is not None:
-    llm_arena_data = pd.read_csv(uploaded_llm_file)
-    st.write("### Uploaded LLM Arena Data (First 10 rows):")
+use_default_llmarena = st.checkbox('Use existing LLM Arena data file (llmarena_elo.csv)')
+
+if use_default_llmarena:
+    llm_arena_data = pd.read_csv(llmarena_default_path)
+    st.write("### Existing LLM Arena Data (First 10 rows):")
     st.write(llm_arena_data.head(10))
+else:
+    uploaded_llm_file = st.file_uploader("Choose a CSV file for LLM Arena data", type="csv")
 
-if uploaded_elo_file is not None and uploaded_llm_file is not None:
+    if uploaded_llm_file is not None:
+        llm_arena_data = pd.read_csv(uploaded_llm_file)
+        st.write("### Uploaded LLM Arena Data (First 10 rows):")
+        st.write(llm_arena_data.head(10))
+
+if uploaded_elo_file is not None and (use_default_llmarena or uploaded_llm_file is not None):
     if st.button("Calculate Correlation"):
         # Define match dictionary
         match_dict = {

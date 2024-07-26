@@ -2,36 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from collections import defaultdict
-
-# Define the ELO computation function
-def compute_online_elo(battles, calibration_model, K=4, SCALE=400, BASE=10, INIT_RATING=1000):
-    rating = defaultdict(lambda: INIT_RATING)
-
-    for model_a, model_b, winner in battles[['Model 1', 'Model 2', 'Winner']].itertuples(index=False):
-        ra = rating[model_a]
-        rb = rating[model_b]
-        ea = 1 / (1 + BASE ** ((rb - ra) / SCALE))
-        eb = 1 / (1 + BASE ** ((ra - rb) / SCALE))
-        if winner == "Model 1":
-            sa = 1
-        elif winner == "Model 2":
-            sa = 0
-        elif winner == "tie" or winner == "tie (bothbad)":
-            sa = 0.5
-        else:
-            raise Exception(f"unexpected vote {winner}")
-        rating[model_a] += K * (sa - ea)
-        rating[model_b] += K * (1 - sa - eb)
-
-    # calibrate the specified model to 800
-    delta = (800 - rating[calibration_model])
-    for model in battles["Model 1"].unique():
-        rating[model] += delta
-
-    elo_df = pd.DataFrame(list(rating.items()), columns=['model_name', 'elo_ranking'])
-    elo_df = elo_df.sort_values(by='elo_ranking', ascending=False).reset_index(drop=True)
-
-    return elo_df
+from pdme.evaluate import pdme_llm
 
 # Win Count Bar Chart
 def plot_win_count(battles):
@@ -89,7 +60,7 @@ if uploaded_file is not None:
     calibration_model = st.selectbox("Select Calibration Model", unique_models, index=0)
 
     if st.button('Rank'):
-        elo_df = compute_online_elo(battles, calibration_model)
+        elo_df = pdme_llm.compute_online_elo(battles, calibration_model)
         st.session_state['elo_df'] = elo_df
         st.write("### ELO Rankings:")
         st.write(elo_df)

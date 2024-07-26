@@ -4,11 +4,12 @@ import os
 import pandas as pd
 from itertools import combinations
 from dotenv import load_dotenv
-
+from datetime import datetime
 import openai
 import anthropic
 import google.generativeai as genai
 from google.api_core.exceptions import GoogleAPICallError, RetryError
+from scipy.stats import pearsonr
 
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
@@ -148,7 +149,18 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
 
     return scores_dict
 
-def main(models_file, eval_type, num_prompts, output_file):
+def compute_correlations(df1, df2):
+    merged_df = pd.merge(df1, df2, on='model_name')
+    merged_df = merged_df.rename(columns={'elo_ranking_x': 'elo_ranking_pdme', 'elo_ranking_y': 'elo_ranking_llmarena'})
+    pearson_corr, pearson_p = pearsonr(merged_df['elo_ranking_pdme'], merged_df['elo_ranking_llmarena'])
+    
+    return {
+        "pearson_corr": pearson_corr,
+        "pearson_p": pearson_p,
+        "merged_df": merged_df
+    }
+
+def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_file, elo_calibration_model, elo_benchmark_file):
     # Load models from CSV file
     models_df = pd.read_csv(models_file)
     model_list = models_df['model_name'].tolist()
@@ -193,13 +205,22 @@ def main(models_file, eval_type, num_prompts, output_file):
     for model_1, model_2 in model_pairs:
         logging.info(f'Generating responses for Model 1: {model_1} and Model 2: {model_2}')
         
-        responses_model_1 = generate_responses(model_1, question_prompts)
-        if responses_model_1 is None:
-            logging.warning(f'Skipping evaluation for Model 1: {model_1} due to generation error.')
+        try:
+            responses_model_1 = generate_responses(model_1, question_prompts)
+            if responses_model_1 is None:
+                logging.warning(f'Skipping evaluation for Model 1: {model_1} due to generation error.')
+                continue
+        except openai.error.InvalidRequestError as e:
+            logging.error(f"Error generating responses for {model_1}: {e}")
             continue
-        responses_model_2 = generate_responses(model_2, question_prompts)
-        if responses_model_2 is None:
-            logging.warning(f'Skipping evaluation for Model 2: {model_2} due to generation error.')
+
+        try:
+            responses_model_2 = generate_responses(model_2, question_prompts)
+            if responses_model_2 is None:
+                logging.warning(f'Skipping evaluation for Model 2: {model_2} due to generation error.')
+                continue
+        except openai.error.InvalidRequestError as e:
+            logging.error(f"Error generating responses for {model_2}: {e}")
             continue
 
         scores = score_responses(evaluation_prompt_template, question_prompts, responses_model_1, responses_model_2, client, eval_model)
@@ -217,16 +238,38 @@ def main(models_file, eval_type, num_prompts, output_file):
         results_df = pd.concat([results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
         logging.info(results_df)
 
+    # Get the current date and time
+    now = datetime.now()
+
+    # Format the date and time as -yyyymmdd-hhmm
+    timestamp = now.strftime("-%Y%m%d-%H%M")
     # Save the results to a CSV file
-    results_df.to_csv(output_file, index=False)
-    logging.info(f"Results saved to {output_file}")
+    battles_output_file_with_timestamp = f"{battles_output_file.rstrip('.csv')}{timestamp}.csv"
+    results_df.to_csv(battles_output_file_with_timestamp, index=False)
+    logging.info(f"Results saved to {battles_output_file_with_timestamp}")
+
+    # Compute ELO rankings
+    elo_df = pdme_llm.compute_online_elo(results_df, elo_calibration_model)
+    elo_output_file_with_timestamp = f"{elo_output_file.rstrip('.csv')}{timestamp}.csv"
+    elo_df.to_csv(elo_output_file_with_timestamp, index=False)
+    logging.info(f"ELO rankings saved to {elo_output_file_with_timestamp}")
+
+    # Calculate correlations
+    llm_arena_data = pd.read_csv(elo_benchmark_file)
+    correlations = compute_correlations(elo_df, llm_arena_data)
+    logging.info(f"Pearson correlation coefficient: {correlations['pearson_corr']} (p-value: {correlations['pearson_p']})")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run PDME Arena evaluation.")
     parser.add_argument("--models_file", type=str, required=True, help="Path to the CSV file containing model names.")
     parser.add_argument("--eval_type", type=str, choices=["generic", "coding", "story_telling"], required=True, help="Type of evaluation.")
     parser.add_argument("--num_prompts", type=int, default=5, help="Number of prompts to generate.")
-    parser.add_argument("--output_file", type=str, default="results.csv", help="Path to the output CSV file for results.")
-
+    parser.add_argument("--battles_output_file", type=str, default="data/generic_battles.csv", help="Path to the output CSV file for battle results.")
+    parser.add_argument("--elo_output_file", type=str, default="data/generic_battles", help="Path to the output CSV file for elo rankings.")
+    parser.add_argument("--elo_calibration_model", type=str, default="claude-3-opus-20240229", help="ELO calibration model.")
+    parser.add_argument("--elo_benchmark_file", type=str, default="llmarena_elo.csv", help="ELO bencmark file to correlate to.")
     args = parser.parse_args()
-    main(args.models_file, args.eval_type, args.num_prompts, args.output_file)
+    main(args.models_file, args.eval_type, 
+         args.num_prompts, args.battles_output_file, 
+         args.elo_output_file, 
+         args.elo_calibration_model, args.elo_benchmark_file)

@@ -9,7 +9,6 @@ import pandas as pd
 from itertools import combinations
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
-from collections import defaultdict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -145,10 +144,10 @@ st.markdown("""
 
 The method uses a single text generation AI, referred to as eval model, to evaluate any other text generation AI on any topic, and the evaluation works like this:
 
-1. We write a text prompt for what questions the eval model should generate, and provide seeds that are randomly picked to generate a question.
-2. The question is sent to the AI model being tested, and it generates a response.
-3. Likewise, the eval model also generates an answer to the same question.
-4. The eval model then uses a text prompt we write, to compare the two answers and pick the winner.
+1. **Bootstrap prompt generation** -wWe write a text prompt for what questions the eval model should generate, 
+            and provide seeds that are randomly picked to generate a question in various categories such as general questions, coding, maths and story telling.
+2. **Questio generation** - we then generate a full-fledged question to be sent a pair of models to which each generate their responses.
+3. **Evaluation and scoring** - we then evaluate the responses of the two models using the eval model to determine the winner.
 5. For *n* models, *n(n-1)/2* comparisons are made to generate competition results.
 6. Finally, we calculate ELO ranking to rank the models.
 
