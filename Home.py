@@ -148,8 +148,8 @@ The method uses a single text generation AI, referred to as eval model, to evalu
             and provide seeds that are randomly picked to generate a question in various categories such as general questions, coding, maths and story telling.
 2. **Questio generation** - we then generate a full-fledged question to be sent a pair of models to which each generate their responses.
 3. **Evaluation and scoring** - we then evaluate the responses of the two models using the eval model to determine the winner.
-5. For *n* models, *n(n-1)/2* comparisons are made to generate competition results.
-6. Finally, we calculate ELO ranking to rank the models.
+5. **Battles** - for *n* models, *n(n-1)/2* comparisons are made to generate competition results.
+6. **Scoring** - we calculate ELO ranking to rank the models.
 
 This method allows us to evaluate models for any topic, such as generic question,  storytelling, programming, and finance.
 The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Instruct.
