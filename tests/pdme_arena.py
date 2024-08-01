@@ -11,9 +11,11 @@ import google.generativeai as genai
 from google.api_core.exceptions import GoogleAPICallError, RetryError
 from scipy.stats import pearsonr
 from utils import calculate_elo_iterative
+from openai import OpenAIError
 
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
 from pdme.evaluate import pdme_llm
+#from evaluate import pdme_llm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -87,12 +89,13 @@ def generate_question_prompts(bootstrap_prompts, model_name, api_key):
 
     for item in bootstrap_prompts:
         try:
-            response = client.chat_completions.create(
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": item},
+            ]
+            response = client.chat.completions.create(
                 model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": item},
-                ]
+                messages=messages,
             )
             question_prompts.append(response.choices[0].message.content)
         except Exception as e:
@@ -106,18 +109,32 @@ def generate_responses(model_name, question_prompts):
 
     if model_name.startswith("gpt"):
         client = openai.OpenAI(api_key=openai_api_key)
+        completion_models = ["text-davinci-002", "text-davinci-003", "gpt-3.5-turbo-instruct"]  # Add other completion models as needed
+        is_completion = model_name in completion_models
+        
         for item in question_prompts:
             try:
-                response = client.chat.completions.create(
-                    model=model_name,
-                    messages=[
+                if is_completion:
+                    response = client.completions.create(
+                        model=model_name,
+                        prompt=item,
+                        max_tokens=1000  # Adjust max_tokens as needed
+                    )
+                    responses.append(response.choices[0].text)
+                else:
+                    messages = [
                         {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": item},
                     ]
-                )
-                responses.append(response.choices[0].message.content)
+                    response = client.chat_completions.create(
+                        model=model_name,
+                        messages=messages,
+                        max_tokens=1000  # Adjust max_tokens as needed
+                    )
+                    responses.append(response.choices[0].message.content)
             except Exception as e:
                 logging.error(f"Error generating response for model {model_name}: {e}")
+                responses.append(None)
 
     elif model_name.startswith("claude"):
         anthropic_client = anthropic.Client(api_key=anthropic_api_key)
@@ -134,6 +151,7 @@ def generate_responses(model_name, question_prompts):
                 responses.append(text_response)
             except Exception as e:
                 logging.error(f"Error generating response for model {model_name}: {e}")
+                responses.append(None)
 
     elif model_name.startswith("gemini"):
         genai.configure(api_key=google_api_key)
@@ -146,29 +164,29 @@ def generate_responses(model_name, question_prompts):
                 responses.append(response.text)
             except (GoogleAPICallError, RetryError, ValueError) as e:
                 logging.error(f"Error generating response for {model_name}: {e}")
-                return None
+                responses.append(None)
 
     else:
         raise ValueError(f"Unsupported model name '{model_name}'.")
 
     return responses
 
+
+
 def score_responses(evaluation_prompt_template, question_prompts, responses_model_a, responses_model_b, client, eval_model):
     logging.info('Scoring responses...')
     llm = pdme_llm(client, eval_model)
     model_a_scores = []
     model_b_scores = []
-    sum_model_a_scores = 0
-    sum_model_b_scores = 0
 
     if not responses_model_a or not responses_model_b:
         logging.error("Empty responses detected. Skipping scoring.")
         return {
             "model_a_scores": model_a_scores,
             "model_b_scores": model_b_scores,
-            "model_a_total_score": sum_model_a_scores,
-            "model_b_total_score": sum_model_b_scores,
-            "winner": "model_b" if sum_model_b_scores >= sum_model_a_scores else "model_a"
+            "model_a_avg_score": 0,
+            "model_b_avg_score": 0,
+            "winner": "tie"
         }
 
     for i, question in enumerate(question_prompts):
@@ -179,24 +197,35 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
             prompt_2 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_a[i]).replace("<response2>", responses_model_b[i])
             score_2 = llm.evaluate(prompt_2, ["1", "2"])
 
-            # Average the scores
-            model_a_score = (score_1[1] + score_2[0]) / 2  # Average of Model A's scores
-            model_b_score = (score_1[0] + score_2[1]) / 2  # Average of Model B's scores
+            if score_1 and score_2:
+                # Average the scores
+                model_a_score = (score_1[1] + score_2[0]) / 2  # Average of Model A's scores
+                model_b_score = (score_1[0] + score_2[1]) / 2  # Average of Model B's scores
 
-            model_a_scores.append(model_a_score)
-            model_b_scores.append(model_b_score)
-            sum_model_a_scores += model_a_score
-            sum_model_b_scores += model_b_score
+                model_a_scores.append(model_a_score)
+                model_b_scores.append(model_b_score)
+            else:
+                logging.error(f"Invalid scores for question {i}: score_1={score_1}, score_2={score_2}")
         except Exception as e:
             logging.error(f"Error scoring responses for question {i}: {e}")
 
-    winner = "model_a" if sum_model_a_scores > sum_model_b_scores else "model_b"
+    # Calculate average scores
+    model_a_avg_score = sum(model_a_scores) / len(model_a_scores) if model_a_scores else 0
+    model_b_avg_score = sum(model_b_scores) / len(model_b_scores) if model_b_scores else 0
+
+    # Determine winner based on average scores
+    if model_a_avg_score > model_b_avg_score:
+        winner = "model_a"
+    elif model_b_avg_score > model_a_avg_score:
+        winner = "model_b"
+    else:
+        winner = "tie"
 
     scores_dict = {
         "model_a_scores": model_a_scores,
         "model_b_scores": model_b_scores,
-        "model_a_total_score": sum_model_a_scores,
-        "model_b_total_score": sum_model_b_scores,
+        "model_a_avg_score": model_a_avg_score,
+        "model_b_avg_score": model_b_avg_score,
         "winner": winner
     }
 
@@ -238,6 +267,8 @@ def save_elo_rankings(elo_df, iter_elo_df, elo_output_file):
     except Exception as e:
         logging.error(f"Error saving ELO rankings: {e}")
 
+
+
 def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model, results_df):
     for model_a, model_b in model_pairs:
         logging.info(f'Generating responses for model_a: {model_a} and model_b: {model_b}')
@@ -247,8 +278,11 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
             if responses_model_a is None:
                 logging.warning(f'Skipping evaluation for model_a: {model_a} due to generation error.')
                 continue
-        except openai.error.InvalidRequestError as e:
-            logging.error(f"Error generating responses for {model_a}: {e}")
+        except OpenAIError as e:
+            logging.error(f"OpenAI error generating responses for {model_a}: {e}")
+            continue
+        except Exception as e:
+            logging.error(f"Unexpected error generating responses for {model_a}: {e}")
             continue
 
         try:
@@ -256,12 +290,15 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
             if responses_model_b is None:
                 logging.warning(f'Skipping evaluation for model_b: {model_b} due to generation error.')
                 continue
-        except openai.error.InvalidRequestError as e:
-            logging.error(f"Error generating responses for {model_b}: {e}")
+        except OpenAIError as e:
+            logging.error(f"OpenAI error generating responses for {model_b}: {e}")
+            continue
+        except Exception as e:
+            logging.error(f"Unexpected error generating responses for {model_b}: {e}")
             continue
         
-        logging.info(f"Responses for model_a {model_a}: {responses_model_a[:5]}")
-        logging.info(f"Responses for model_b {model_b}: {responses_model_b[:5]}")
+        #logging.info(f"Responses for model_a {model_a}: {responses_model_a[:5]}")
+        #logging.info(f"Responses for model_b {model_b}: {responses_model_b[:5]}")
 
         scores = score_responses(evaluation_prompt_template, question_prompts, responses_model_a, responses_model_b, client, eval_model)
 
@@ -271,8 +308,8 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
         new_row = pd.DataFrame({
             "model_a": [model_a],
             "model_b": [model_b],
-            "model_a_total_score": [scores["model_a_total_score"]],
-            "model_b_total_score": [scores["model_b_total_score"]],
+            "model_a_avg_score": [scores["model_a_avg_score"]],
+            "model_b_avg_score": [scores["model_b_avg_score"]],
             "winner": [winner]
         }, index=[0])
         results_df = pd.concat([results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
@@ -369,7 +406,7 @@ if __name__ == "__main__":
     parser.add_argument("--battles_output_file", type=str, default="data/generic_battles.csv", help="Path to the output CSV file for battle results.")
     parser.add_argument("--elo_output_file", type=str, default="data/generic_elo.csv", help="Path to the output CSV file for elo rankings.")
     parser.add_argument("--elo_calibration_model", type=str, default="claude-3-opus-20240229", help="ELO calibration model.")
-    parser.add_argument("--elo_benchmark_file", type=str, default="llmarena_elo.csv", help="ELO benchmark file to correlate to.")
+    parser.add_argument("--elo_benchmark_file", type=str, default="data/llmarena_elo.csv", help="ELO benchmark file to correlate to.")
     parser.add_argument("--eval_model", type=str, default="gpt-3.5-turbo-instruct", help="Evaluation model.")
     parser.add_argument("--battle_type", type=str, choices=["all_vs_all", "eval_to_all"], required=True, help="Type of battle.")
     args = parser.parse_args()

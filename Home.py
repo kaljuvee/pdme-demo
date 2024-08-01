@@ -162,6 +162,7 @@ The Evaluator Model is currently always assumed to be OpenAI's GPT-3.5 Turbo Ins
 * [HuggingFace Text Generation Models](https://huggingface.co/models?pipeline_tag=text-generation)
 * [VLLM Supported Models](https://docs.vllm.ai/en/latest/models/supported_models.html#supported-models)
 * [LLM Arena Leaderboard](https://chat.lmsys.org/?leaderboard)
+* [OpenLLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard)
 
 ## Notes
 
