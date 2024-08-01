@@ -43,12 +43,28 @@ def load_questions(file_path):
     try:
         # Try to load the DataFrame from the specified Parquet file
         df = pd.read_parquet("hf://datasets/tatsu-lab/alpaca/data/train-00000-of-00001-a09b74b3ef9c3b56.parquet")
-        df = df[df['input'].isnull()].head(100)  # Only grab records where 'input' is empty or None
-        questions = df['instruction'].tolist()
-        logging.info(f"Loaded questions from Parquet file. Total questions loaded: {len(questions)}")
+        logging.info(f"Loaded DataFrame from Parquet file with shape: {df.shape}")
+
+        # Log unique values in 'input' column to inspect
+        unique_inputs = df['input'].unique()
+        logging.info(f"Unique values in 'input' column: {unique_inputs}")
+
+        # Only grab records where 'input' is empty or None
+        df_filtered = df[df['input'].isnull()].head(100)
+        logging.info(f"Filtered DataFrame with null 'input' and head 100: {df_filtered.head(5)}")
+
+        questions = df_filtered['instruction'].tolist()
+        if questions:
+            logging.info(f"Loaded questions from Parquet file. Total questions loaded: {len(questions)}")
+        else:
+            logging.error("No questions loaded from Parquet file.")
+            questions = []
     except Exception as e:
         logging.error(f"Error loading Parquet file: {e}")
-        # Fallback to loading the template if there's an error
+        questions = []
+
+    # Fallback to loading the template if no questions are loaded
+    if not questions:
         content = load_template(file_path)
         if content:
             questions = content.split('\n')
@@ -56,7 +72,9 @@ def load_questions(file_path):
             logging.info(f"Loaded questions from template. Total questions loaded: {len(questions)}")
         else:
             questions = []
+
     return questions
+
 
 def generate_bootstrap_prompts(seeds, template, num):
     logging.info('Generating bootstrap prompts...')
@@ -68,14 +86,17 @@ def generate_question_prompts(bootstrap_prompts, model_name, api_key):
     question_prompts = []
 
     for item in bootstrap_prompts:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": item},
-            ]
-        )
-        question_prompts.append(response.choices[0].message.content)
+        try:
+            response = client.chat_completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": item},
+                ]
+            )
+            question_prompts.append(response.choices[0].message.content)
+        except Exception as e:
+            logging.error(f"Error generating question prompt for model {model_name}: {e}")
     
     return question_prompts
 
@@ -86,27 +107,33 @@ def generate_responses(model_name, question_prompts):
     if model_name.startswith("gpt"):
         client = openai.OpenAI(api_key=openai_api_key)
         for item in question_prompts:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": item},
-                ]
-            )
-            responses.append(response.choices[0].message.content)
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": item},
+                    ]
+                )
+                responses.append(response.choices[0].message.content)
+            except Exception as e:
+                logging.error(f"Error generating response for model {model_name}: {e}")
 
     elif model_name.startswith("claude"):
         anthropic_client = anthropic.Client(api_key=anthropic_api_key)
         for item in question_prompts:
-            response = anthropic_client.messages.create(
-                model=model_name,
-                max_tokens=1000,
-                messages=[
-                    {"role": "user", "content": item}
-                ]
-            )
-            text_response = response.content[0].text
-            responses.append(text_response)
+            try:
+                response = anthropic_client.messages.create(
+                    model=model_name,
+                    max_tokens=1000,
+                    messages=[
+                        {"role": "user", "content": item}
+                    ]
+                )
+                text_response = response.content[0].text
+                responses.append(text_response)
+            except Exception as e:
+                logging.error(f"Error generating response for model {model_name}: {e}")
 
     elif model_name.startswith("gemini"):
         genai.configure(api_key=google_api_key)
@@ -134,21 +161,34 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
     sum_model_a_scores = 0
     sum_model_b_scores = 0
 
+    if not responses_model_a or not responses_model_b:
+        logging.error("Empty responses detected. Skipping scoring.")
+        return {
+            "model_a_scores": model_a_scores,
+            "model_b_scores": model_b_scores,
+            "model_a_total_score": sum_model_a_scores,
+            "model_b_total_score": sum_model_b_scores,
+            "winner": "model_b" if sum_model_b_scores >= sum_model_a_scores else "model_a"
+        }
+
     for i, question in enumerate(question_prompts):
-        prompt_1 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_b[i]).replace("<response2>", responses_model_a[i])
-        score_1 = llm.evaluate(prompt_1, ["1", "2"])
+        try:
+            prompt_1 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_b[i]).replace("<response2>", responses_model_a[i])
+            score_1 = llm.evaluate(prompt_1, ["1", "2"])
 
-        prompt_2 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_a[i]).replace("<response2>", responses_model_b[i])
-        score_2 = llm.evaluate(prompt_2, ["1", "2"])
+            prompt_2 = evaluation_prompt_template.replace("<question_full>", question).replace("<response1>", responses_model_a[i]).replace("<response2>", responses_model_b[i])
+            score_2 = llm.evaluate(prompt_2, ["1", "2"])
 
-        # Average the scores
-        model_a_score = (score_1[1] + score_2[0]) / 2  # Average of Model A's scores
-        model_b_score = (score_1[0] + score_2[1]) / 2  # Average of Model B's scores
+            # Average the scores
+            model_a_score = (score_1[1] + score_2[0]) / 2  # Average of Model A's scores
+            model_b_score = (score_1[0] + score_2[1]) / 2  # Average of Model B's scores
 
-        model_a_scores.append(model_a_score)
-        model_b_scores.append(model_b_score)
-        sum_model_a_scores += model_a_score
-        sum_model_b_scores += model_b_score
+            model_a_scores.append(model_a_score)
+            model_b_scores.append(model_b_score)
+            sum_model_a_scores += model_a_score
+            sum_model_b_scores += model_b_score
+        except Exception as e:
+            logging.error(f"Error scoring responses for question {i}: {e}")
 
     winner = "model_a" if sum_model_a_scores > sum_model_b_scores else "model_b"
 
@@ -219,6 +259,9 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
         except openai.error.InvalidRequestError as e:
             logging.error(f"Error generating responses for {model_b}: {e}")
             continue
+        
+        logging.info(f"Responses for model_a {model_a}: {responses_model_a[:5]}")
+        logging.info(f"Responses for model_b {model_b}: {responses_model_b[:5]}")
 
         scores = score_responses(evaluation_prompt_template, question_prompts, responses_model_a, responses_model_b, client, eval_model)
 
@@ -284,6 +327,10 @@ def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_fi
     # Set up prompts
     question_prompts = setup_prompts(eval_type, num_prompts, openai_api_key)
 
+    if not question_prompts:
+        logging.error("No question prompts generated. Exiting.")
+        return
+
     # Initialize results DataFrame
     results_df = initialize_results_df()
 
@@ -294,8 +341,11 @@ def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_fi
     # Evaluate models
     evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model, results_df)
 
+    # Modify battles_output_file to include battle_type
+    battles_output_file_with_type = battles_output_file.replace(".csv", f"_{battle_type}.csv")
+
     # Save results
-    save_results(results_df, battles_output_file)
+    save_results(results_df, battles_output_file_with_type)
 
     # Compute benchmarked ELO rankings
     elo_df = pdme_llm.compute_online_elo(results_df, elo_calibration_model)
