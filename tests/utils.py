@@ -1,5 +1,8 @@
 import pandas as pd
-import math
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def calculate_elo_iterative(df, initial_k=32, iterations=100, tolerance=0.1):
     try:
@@ -54,8 +57,11 @@ def calculate_elo_iterative(df, initial_k=32, iterations=100, tolerance=0.1):
                 games_played[model_a] += 1
                 games_played[model_b] += 1
 
+            logging.info(f"Iteration {iteration + 1}: {new_ratings}")
+
             if has_converged(old_ratings, new_ratings, tolerance):
                 ratings = new_ratings
+                logging.info(f"Converged after {iteration + 1} iterations.")
                 break
 
             ratings = new_ratings
@@ -68,8 +74,8 @@ def calculate_elo_iterative(df, initial_k=32, iterations=100, tolerance=0.1):
         return ratings_df.sort_values('Rating', ascending=False).reset_index(drop=True)
 
     except KeyError as e:
-        print(f"Key error: {e}. Please ensure the DataFrame contains the correct columns.")
+        logging.error(f"Key error: {e}. Please ensure the DataFrame contains the correct columns.")
         return pd.DataFrame(columns=['Model', 'Rating'])
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An error occurred: {e}")
         return pd.DataFrame(columns=['Model', 'Rating'])
