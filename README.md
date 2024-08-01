@@ -42,6 +42,7 @@ python tests/pdme_arena.py \
     --battles_output_file data/generic_battles.csv \
     --elo_output_file data/generic_elo.csv \
     --elo_calibration_model claude-3-opus-20240229 \
+    --elo_benchmark_file data/llmarena_elo.csv \
     --eval_model gpt-3.5-turbo-instruct \
     --battle_type all_vs_all
   ```
