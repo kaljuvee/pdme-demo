@@ -3,8 +3,8 @@ import json
 from collections import defaultdict
 import pandas as pd
 import logging
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 class pdme_llm:
     """
@@ -47,9 +47,6 @@ class pdme_llm:
             list: A list of probabilities corresponding to the labels.
         """
         response = self.generate(prompt, 1)
-        if response is None:
-            logging.error(f"No response generated for prompt: {prompt}")
-            return [0] * len(labels)
         label_probabilities = self.probability_of_labels(response, labels)
         return label_probabilities
 
@@ -65,20 +62,22 @@ class pdme_llm:
         Returns:
             object: The response from the model.
         """
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": input},
-        ]
-        try:
+        if self.is_chat:
             response = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=messages,
-                max_tokens=max_tokens
+                messages=input,
+                max_tokens=max_tokens,
+                logprobs=True,
+                top_logprobs=logprobs,
             )
-            return response
-        except Exception as e:
-            logging.error(f"Error generating response: {e}")
-            return None
+        else:
+            response = self.client.completions.create(
+                model=self.model_name,
+                prompt=input,
+                max_tokens=max_tokens,
+                logprobs=logprobs,
+            )
+        return response
 
     def probability_of_labels(self, response, labels):
         """
@@ -167,7 +166,7 @@ class pdme_llm:
         elo_df = elo_df.sort_values(by='elo_ranking', ascending=False).reset_index(drop=True)
 
         return elo_df
-
+     
     @staticmethod
     def calculate_elo_iterative(df, initial_k=32, iterations=100, tolerance=0.1):
         try:
@@ -203,7 +202,7 @@ class pdme_llm:
                     rating_a, rating_b = get_rating(model_a), get_rating(model_b)
                     
                     # Calculate score based on the total column
-                    score_a = match['model_a_total'] / (match['model_a_total'] + match['model_b_total'])
+                    score_a = match['model_a_avg_score'] / (match['model_a_avg_score'] + match['model_b_avg_score'])
                     score_b = 1 - score_a
     
                     # Expected scores
@@ -235,12 +234,12 @@ class pdme_llm:
             mean_rating = sum(ratings.values()) / len(ratings)
             normalized_ratings = {model: int(round(1500 + (rating - mean_rating))) for model, rating in ratings.items()}
             
-            ratings_df = pd.DataFrame(list(normalized_ratings.items()), columns=['Model', 'Rating'])
-            return ratings_df.sort_values('Rating', ascending=False).reset_index(drop=True)
+            ratings_df = pd.DataFrame(list(normalized_ratings.items()), columns=['model_name', 'elo_ranking'])
+            return ratings_df.sort_values('elo_ranking', ascending=False).reset_index(drop=True)
     
         except KeyError as e:
             logging.error(f"Key error: {e}. Please ensure the DataFrame contains the correct columns.")
-            return pd.DataFrame(columns=['Model', 'Rating'])
+            return pd.DataFrame(columns=['model_name', 'elo_ranking'])
         except Exception as e:
             logging.error(f"An error occurred: {e}")
-            return pd.DataFrame(columns=['Model', 'Rating'])
+            return pd.DataFrame(columns=['model_name', 'elo_ranking'])

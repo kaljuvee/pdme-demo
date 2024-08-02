@@ -1,4 +1,4 @@
-Model,Rating
+model_name,elo_ranking
 gpt-4o,1520
 claude-3-opus-20240229,1517
 claude-3-sonnet-20240229,1510

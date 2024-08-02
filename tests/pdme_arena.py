@@ -10,12 +10,10 @@ import anthropic
 import google.generativeai as genai
 from google.api_core.exceptions import GoogleAPICallError, RetryError
 from scipy.stats import pearsonr
-from utils import calculate_elo_iterative
 from openai import OpenAIError
-
 from pdme.generate_bootstrap_prompts import create_bootstrap_prompts
-from pdme.evaluate import pdme_llm
-#from evaluate import pdme_llm
+#from pdme.evaluate import pdme_llm
+from evaluate import pdme_llm
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -47,14 +45,11 @@ def load_questions(file_path):
         df = pd.read_parquet("hf://datasets/tatsu-lab/alpaca/data/train-00000-of-00001-a09b74b3ef9c3b56.parquet")
         logging.info(f"Loaded DataFrame from Parquet file with shape: {df.shape}")
 
-        # Log unique values in 'input' column to inspect
-        unique_inputs = df['input'].unique()
-        logging.info(f"Unique values in 'input' column: {unique_inputs}")
+        # Filter rows where 'input' is null or an empty string
+        df_filtered = df[df['input'].isnull() | (df['input'] == '')].head(100)
+        logging.info(f"Filtered DataFrame with null or empty 'input' and head 100: {df_filtered.shape}")
 
-        # Only grab records where 'input' is empty or None
-        df_filtered = df[df['input'].isnull()].head(100)
-        logging.info(f"Filtered DataFrame with null 'input' and head 100: {df_filtered.head(5)}")
-
+        # Extract questions from the 'instruction' column
         questions = df_filtered['instruction'].tolist()
         if questions:
             logging.info(f"Loaded questions from Parquet file. Total questions loaded: {len(questions)}")
@@ -77,7 +72,6 @@ def load_questions(file_path):
 
     return questions
 
-
 def generate_bootstrap_prompts(seeds, template, num):
     logging.info('Generating bootstrap prompts...')
     return create_bootstrap_prompts(template=template, seeds=seeds, num=num)
@@ -99,7 +93,7 @@ def generate_question_prompts(bootstrap_prompts, model_name, api_key):
             )
             question_prompts.append(response.choices[0].message.content)
         except Exception as e:
-            logging.error(f"Error generating question prompt for model {model_name}: {e}")
+            logging.error(f"Error generating question prompt for model %s: %s", model_name, e)
     
     return question_prompts
 
@@ -126,14 +120,14 @@ def generate_responses(model_name, question_prompts):
                         {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": item},
                     ]
-                    response = client.chat_completions.create(
+                    response = client.chat.completions.create(
                         model=model_name,
                         messages=messages,
                         max_tokens=1000  # Adjust max_tokens as needed
                     )
                     responses.append(response.choices[0].message.content)
             except Exception as e:
-                logging.error(f"Error generating response for model {model_name}: {e}")
+                logging.error(f"Error generating response for model %s: %s", model_name, e)
                 responses.append(None)
 
     elif model_name.startswith("claude"):
@@ -150,7 +144,7 @@ def generate_responses(model_name, question_prompts):
                 text_response = response.content[0].text
                 responses.append(text_response)
             except Exception as e:
-                logging.error(f"Error generating response for model {model_name}: {e}")
+                logging.error(f"Error generating response for model %s: %s", model_name, e)
                 responses.append(None)
 
     elif model_name.startswith("gemini"):
@@ -163,15 +157,13 @@ def generate_responses(model_name, question_prompts):
                 response = model.generate_content(item)
                 responses.append(response.text)
             except (GoogleAPICallError, RetryError, ValueError) as e:
-                logging.error(f"Error generating response for {model_name}: {e}")
+                logging.error(f"Error generating response for model %s: %s", model_name, e)
                 responses.append(None)
 
     else:
         raise ValueError(f"Unsupported model name '{model_name}'.")
 
     return responses
-
-
 
 def score_responses(evaluation_prompt_template, question_prompts, responses_model_a, responses_model_b, client, eval_model):
     logging.info('Scoring responses...')
@@ -205,9 +197,9 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
                 model_a_scores.append(model_a_score)
                 model_b_scores.append(model_b_score)
             else:
-                logging.error(f"Invalid scores for question {i}: score_1={score_1}, score_2={score_2}")
+                logging.error(f"Invalid scores for question %d: score_1=%s, score_2=%s", i, score_1, score_2)
         except Exception as e:
-            logging.error(f"Error scoring responses for question {i}: {e}")
+            logging.error(f"Error scoring responses for question %d: %s", i, e)
 
     # Calculate average scores
     model_a_avg_score = sum(model_a_scores) / len(model_a_scores) if model_a_scores else 0
@@ -232,25 +224,55 @@ def score_responses(evaluation_prompt_template, question_prompts, responses_mode
     return scores_dict
 
 def compute_correlations(df1, df2):
-    merged_df = pd.merge(df1, df2, on='model_name')
-    merged_df = merged_df.rename(columns={'elo_ranking_x': 'elo_ranking_pdme', 'elo_ranking_y': 'elo_ranking_llmarena'})
-    pearson_corr, pearson_p = pearsonr(merged_df['elo_ranking_pdme'], merged_df['elo_ranking_llmarena'])
-    
-    return {
-        "pearson_corr": pearson_corr,
-        "pearson_p": pearson_p,
-        "merged_df": merged_df
-    }
+    try:
+        # Dictionary mapping for creating the matching key
+        model_mapping = {
+            'gemini-1.5-pro-api-0514': 'gemini-1.5-pro',
+            'gpt-4o-2024-05-13': 'gpt-4o',
+            'gemini-1.5-pro-api-0409-preview': 'gemini-1.5-pro',
+            'gpt-4-1106-preview': 'gpt-4',
+            'gpt-3.5-turbo-0314': 'gpt-3.5-turbo'
+        }
+
+        # Apply mapping to create a match_key in df1
+        df1['match_key'] = df1['model_name'].map(model_mapping)
+        logging.debug(f"compute_correlations.df1 with match_key: {df1}")
+
+        # Rename the columns for clarity before merging
+        df2 = df2.rename(columns={'model_name': 'match_key'})
+
+        # Merge DataFrames on the match_key
+        merged_df = pd.merge(df1, df2, on='match_key')
+        logging.info(f"compute_correlations.merged_df: {merged_df}")
+
+        # Check the lengths before calculating correlation
+        if len(merged_df) < 2:
+            raise ValueError('The merged DataFrame must have at least 2 rows for correlation computation.')
+
+        pearson_corr, pearson_p = pearsonr(merged_df['elo_ranking_x'], merged_df['elo_ranking_y'])
+        
+        return {
+            "pearson_corr": pearson_corr,
+            "pearson_p": pearson_p,
+            "merged_df": merged_df
+        }
+    except ValueError as ve:
+        logging.error(f"ValueError: {ve}")
+        return {
+            "pearson_corr": None,
+            "pearson_p": None,
+            "merged_df": None
+        }
 
 def save_results(results_df, battles_output_file):
     try:
         now = datetime.now()
-        timestamp = now.strftime("-%Y%mdd-%H%M")
+        timestamp = now.strftime("-%Y%m%d-%H%M")
         battles_output_file_with_timestamp = f"{battles_output_file.rstrip('.csv')}{timestamp}.csv"
         results_df.to_csv(battles_output_file_with_timestamp, index=False)
         logging.info(f"Results saved to {battles_output_file_with_timestamp}")
     except Exception as e:
-        logging.error(f"Error saving results: {e}")
+        logging.error(f"Error saving results: %s", e)
 
 def save_elo_rankings(elo_df, iter_elo_df, elo_output_file):
     try:
@@ -260,16 +282,15 @@ def save_elo_rankings(elo_df, iter_elo_df, elo_output_file):
         iter_elo_output_file_with_timestamp = f"{elo_output_file.rstrip('.csv')}{timestamp}-iter.csv"
 
         elo_df.to_csv(elo_output_file_with_timestamp, index=False)
-        logging.info(f"Calibrated ELO rankings saved to {elo_output_file_with_timestamp}")
+        logging.info(f"Calibrated ELO rankings saved to %s", elo_output_file_with_timestamp)
 
         iter_elo_df.to_csv(iter_elo_output_file_with_timestamp, index=False)
-        logging.info(f"Iterative ELO rankings saved to {iter_elo_output_file_with_timestamp}")
+        logging.info(f"Iterative ELO rankings saved to %s", iter_elo_output_file_with_timestamp)
     except Exception as e:
-        logging.error(f"Error saving ELO rankings: {e}")
+        logging.error(f"Error saving ELO rankings: %s", e)
 
-
-
-def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model, results_df):
+def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model):
+    battles_df = pd.DataFrame(columns=["model_a", "model_b", "model_a_scores", "model_b_scores", "model_a_avg_score", "model_b_avg_score", "winner"])
     for model_a, model_b in model_pairs:
         logging.info(f'Generating responses for model_a: {model_a} and model_b: {model_b}')
         
@@ -279,10 +300,10 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
                 logging.warning(f'Skipping evaluation for model_a: {model_a} due to generation error.')
                 continue
         except OpenAIError as e:
-            logging.error(f"OpenAI error generating responses for {model_a}: {e}")
+            logging.error(f"OpenAI error generating responses for %s: %s", model_a, e)
             continue
         except Exception as e:
-            logging.error(f"Unexpected error generating responses for {model_a}: {e}")
+            logging.error(f"Unexpected error generating responses for %s: %s", model_a, e)
             continue
 
         try:
@@ -291,29 +312,32 @@ def evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, c
                 logging.warning(f'Skipping evaluation for model_b: {model_b} due to generation error.')
                 continue
         except OpenAIError as e:
-            logging.error(f"OpenAI error generating responses for {model_b}: {e}")
+            logging.error(f"OpenAI error generating responses for %s: %s", model_b, e)
             continue
         except Exception as e:
-            logging.error(f"Unexpected error generating responses for {model_b}: {e}")
+            logging.error(f"Unexpected error generating responses for %s: %s", model_b, e)
             continue
         
-        #logging.info(f"Responses for model_a {model_a}: {responses_model_a[:5]}")
-        #logging.info(f"Responses for model_b {model_b}: {responses_model_b[:5]}")
-
         scores = score_responses(evaluation_prompt_template, question_prompts, responses_model_a, responses_model_b, client, eval_model)
 
-        logging.info(f'Scores: {scores}')
+        logging.info(f'evaluate_models: scores: {scores}')
         winner = scores["winner"]
         
         new_row = pd.DataFrame({
             "model_a": [model_a],
             "model_b": [model_b],
+            "model_a_scores": [scores["model_a_scores"]],
+            "model_b_scores": [scores["model_b_scores"]],
             "model_a_avg_score": [scores["model_a_avg_score"]],
             "model_b_avg_score": [scores["model_b_avg_score"]],
             "winner": [winner]
-        }, index=[0])
-        results_df = pd.concat([results_df.reset_index(drop=True), new_row.reset_index(drop=True)], ignore_index=True)
-        logging.info(results_df)
+        })
+
+        # Ensure the DataFrame columns are unique and consistent
+        battles_df = pd.concat([battles_df, new_row], ignore_index=True)
+        logging.info(battles_df)
+
+    return battles_df
 
 def setup_prompts(eval_type, num_prompts, openai_api_key):
     if eval_type in ['coding', 'story_telling']:
@@ -342,24 +366,27 @@ def setup_prompts(eval_type, num_prompts, openai_api_key):
 
     return question_prompts
 
-def initialize_results_df():
-    return pd.DataFrame(columns=["model_a", "model_b", "model_a_total_score", "model_b_total_score", "winner"])
+def initialize_battles_df():
+    return pd.DataFrame(columns=["model_a", "model_b", "model_a_scores", "model_b_scores", "model_a_avg_score", "model_b_avg_score", "winner"])
 
-def generate_model_pairs(model_list, eval_model, battle_type):
+def generate_model_pairs(model_list, eval_model, base_model, battle_type):
+    if base_model in model_list:
+        model_list = [model for model in model_list if model != base_model]
+
     if battle_type == "all_vs_all":
         return list(combinations(model_list, 2))
-    elif battle_type == "eval_to_all":
-        return [(eval_model, model) for model in model_list if model != eval_model]
+    elif battle_type == "base_vs_all":
+        return [(base_model, model) for model in model_list if model != eval_model]
     else:
         raise ValueError(f"Unsupported battle type '{battle_type}'.")
-
-def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_file, elo_calibration_model, elo_benchmark_file, eval_model, battle_type):
+    
+def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_file, elo_calibration_model, elo_benchmark_file, eval_model, base_model, battle_type):
     # Load models from CSV file
     models_df = pd.read_csv(models_file)
     model_list = models_df['model_name'].tolist()
 
     # Generate model pairs based on the battle type
-    model_pairs = generate_model_pairs(model_list, eval_model, battle_type)
+    model_pairs = generate_model_pairs(model_list, eval_model, base_model, battle_type)
 
     # Set up prompts
     question_prompts = setup_prompts(eval_type, num_prompts, openai_api_key)
@@ -368,34 +395,32 @@ def main(models_file, eval_type, num_prompts, battles_output_file, elo_output_fi
         logging.error("No question prompts generated. Exiting.")
         return
 
-    # Initialize results DataFrame
-    results_df = initialize_results_df()
-
     # Load evaluation model and client
     client = openai.OpenAI(api_key=openai_api_key)
     evaluation_prompt_template = load_template('templates/evaluation_template.md')
 
     # Evaluate models
-    evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model, results_df)
+    battles_df = evaluate_models(model_pairs, question_prompts, evaluation_prompt_template, client, eval_model)
 
     # Modify battles_output_file to include battle_type
     battles_output_file_with_type = battles_output_file.replace(".csv", f"_{battle_type}.csv")
 
     # Save results
-    save_results(results_df, battles_output_file_with_type)
+    logging.info(f'Saving battle results to {battles_output_file_with_type}')
+    save_results(battles_df, battles_output_file_with_type)
 
     # Compute benchmarked ELO rankings
-    elo_df = pdme_llm.compute_online_elo(results_df, elo_calibration_model)
-    iter_elo_df = calculate_elo_iterative(results_df)
+    elo_df = pdme_llm.compute_online_elo(battles_df, elo_calibration_model)
+    iter_elo_df = pdme_llm.calculate_elo_iterative(battles_df)
     save_elo_rankings(elo_df, iter_elo_df, elo_output_file)
 
     # Calculate correlations for calibrated ELO
     llm_arena_data = pd.read_csv(elo_benchmark_file)
-    correlations = compute_correlations(elo_df, llm_arena_data)
+    correlations = compute_correlations(llm_arena_data, elo_df)
     logging.info(f"Calibrated ELO: Pearson correlation coefficient: {correlations['pearson_corr']} (p-value: {correlations['pearson_p']})")
 
     # Calculate correlations for iterative ELO
-    iter_correlations = compute_correlations(iter_elo_df, llm_arena_data)
+    iter_correlations = compute_correlations(llm_arena_data, iter_elo_df)
     logging.info(f"Iterative ELO: Pearson correlation coefficient: {iter_correlations['pearson_corr']} (p-value: {iter_correlations['pearson_p']})")
 
 if __name__ == "__main__":
@@ -408,10 +433,11 @@ if __name__ == "__main__":
     parser.add_argument("--elo_calibration_model", type=str, default="claude-3-opus-20240229", help="ELO calibration model.")
     parser.add_argument("--elo_benchmark_file", type=str, default="data/llmarena_elo.csv", help="ELO benchmark file to correlate to.")
     parser.add_argument("--eval_model", type=str, default="gpt-3.5-turbo-instruct", help="Evaluation model.")
-    parser.add_argument("--battle_type", type=str, choices=["all_vs_all", "eval_to_all"], required=True, help="Type of battle.")
+    parser.add_argument("--base_model", type=str, default="gpt-4o", required=True, help="Base model for base_to_all battles.")
+    parser.add_argument("--battle_type", type=str,default="base_vs_all", choices=["all_vs_all", "base_vs_all"], required=True, help="Type of battle.")
     args = parser.parse_args()
     main(args.models_file, args.eval_type, 
          args.num_prompts, args.battles_output_file, 
          args.elo_output_file, 
          args.elo_calibration_model, args.elo_benchmark_file,
-         args.eval_model, args.battle_type)
+         args.eval_model, args.base_model, args.battle_type)
